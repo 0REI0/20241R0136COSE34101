@@ -3,7 +3,7 @@
 #include <time.h>
 
 #define MAX_PROCESSES 5
-#define TIME_QUANTUM 4
+#define TIME_QUANTUM 3
 #define MAX_TIME 500
 
 typedef struct {
@@ -32,6 +32,7 @@ typedef struct {
 
 void create_process(int pid);
 void config(Chart c);
+
 void schedule_fcfs();
 void schedule_sjf();
 void schedule_preemptive_sjf();
@@ -375,8 +376,11 @@ void schedule_preemptive_sjf() {
     int time = 0;
     int process_finished = 0;
     Process* p = NULL;
+    int arrived;
 
     while (process_finished < MAX_PROCESSES) {
+        arrived = 0;
+
         for (int i = 0; i < new.size; i++) {
             if (new.p[i].arrival_time == time) {
                 ready.p[ready.size] = new.p[i];
@@ -384,6 +388,7 @@ void schedule_preemptive_sjf() {
                 new.p[i] = new.p[new.size - 1];
                 new.size--;
                 i--;
+                arrived = 1;
             }
         }
         for (int i = 0; i < waiting.size; i++) {
@@ -393,6 +398,7 @@ void schedule_preemptive_sjf() {
                 waiting.p[i] = waiting.p[waiting.size - 1];
                 waiting.size--;
                 i--;
+                arrived = 1;
             }
         }
 
@@ -409,8 +415,11 @@ void schedule_preemptive_sjf() {
             continue;
         }
 
-        qsort(ready.p, ready.size, sizeof(Process), compare_burst);
-        p = &ready.p[0];
+        if (p == NULL || arrived == 1) {
+            qsort(ready.p, ready.size, sizeof(Process), compare_burst);
+            p = &ready.p[0];
+        }
+
 
         psjf.pid[time] = p->pid;
 
@@ -556,8 +565,11 @@ void schedule_preemptive_priority() {
     int time = 0;
     int process_finished = 0;
     Process* p = NULL;
+    int arrived;
 
     while (process_finished < MAX_PROCESSES) {
+        arrived = 0;
+
         for (int i = 0; i < new.size; i++) {
             if (new.p[i].arrival_time == time) {
                 ready.p[ready.size] = new.p[i];
@@ -565,6 +577,7 @@ void schedule_preemptive_priority() {
                 new.p[i] = new.p[new.size - 1];
                 new.size--;
                 i--;
+                arrived = 1;
             }
         }
         for (int i = 0; i < waiting.size; i++) {
@@ -574,6 +587,7 @@ void schedule_preemptive_priority() {
                 waiting.p[i] = waiting.p[waiting.size - 1];
                 waiting.size--;
                 i--;
+                arrived = 1;
             }
         }
 
@@ -585,13 +599,15 @@ void schedule_preemptive_priority() {
                     waiting.p[i].io_burst--;
                 }
             }
-            pprior.pid[time] = -1;
+            psjf.pid[time] = -1;
             time++;
             continue;
         }
 
-        qsort(ready.p, ready.size, sizeof(Process), compare_priority);
-        p = &ready.p[0];
+        if (p == NULL || arrived == 1) {
+            qsort(ready.p, ready.size, sizeof(Process), compare_priority);
+            p = &ready.p[0];
+        }
 
         pprior.pid[time] = p->pid;
 
@@ -677,6 +693,7 @@ void schedule_rr() {
                 }
             }
             rr.pid[time] = -1;
+            quantumtime = 0;
             time++;
             continue;
         }
@@ -711,7 +728,7 @@ void schedule_rr() {
         quantumtime++;
 
         if (quantumtime == TIME_QUANTUM) {
-            ready.p[0].arrival_time = time;
+            p->arrival_time = time;
         }
 
         if (p->remain_time == 0) {
@@ -783,10 +800,10 @@ void print_chart(Chart c) {
             break;
         }
         else if (c.pid[i] == -1) {
-            printf("%d:IDLE", i);
+            printf("IDLE");
         }
         else {
-            printf("%d:%04d", i, c.pid[i]);
+            printf("%04d", c.pid[i]);
         }
         printf("|");
         if (i % 10 == 9) {
