@@ -599,7 +599,7 @@ void schedule_preemptive_priority() {
                     waiting.p[i].io_burst--;
                 }
             }
-            psjf.pid[time] = -1;
+            pprior.pid[time] = -1;
             time++;
             continue;
         }
