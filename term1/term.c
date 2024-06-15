@@ -4,7 +4,7 @@
 
 #define MAX_PROCESSES 5
 #define TIME_QUANTUM 3
-#define MAX_TIME 500
+#define MAX_TIME 200
 
 typedef struct {
     int pid;
@@ -30,6 +30,11 @@ typedef struct {
     int size;
 } Chart;
 
+typedef struct {
+    int index;
+    double time;
+} Eval;
+
 void create_process(int pid);
 void config(Chart c);
 
@@ -47,58 +52,66 @@ int compare_arrival(const void* a, const void* b);
 int compare_burst(const void* a, const void* b);
 int compare_priority(const void* a, const void* b);
 
+int compare_time(const void* a, const void* b);
+
 Queue job, new, ready, waiting, finished;
 Chart fcfs, sjf, psjf, prior, pprior, rr;
+Eval averageWaitingTime[6], averageTurnaroundTime[6];
 
 int main() {
     srand(time(0));
 
+    job.size = 0;
     for (int i = 0; i < MAX_PROCESSES; i++) {
         create_process(i);
     }
+    
+    for (int i = 0; i < 6; i++) {
+        averageWaitingTime[i].index = i;
+        averageTurnaroundTime[i].index = i;
+    }
+    printf("\n");
 
     config(fcfs);
     printf("FCFS Scheduling\n");
     schedule_fcfs();
-    evaluation();
 
     config(sjf);
     printf("SJF Scheduling\n");
     schedule_sjf();
-    evaluation();
 
     config(psjf);
     printf("preemptive SJF Scheduling\n");
     schedule_preemptive_sjf();
-    evaluation();
 
     config(prior);
     printf("priority Scheduling\n");
     schedule_priority();
-    evaluation();
 
     config(pprior);
     printf("preemptive priority Scheduling\n");
     schedule_preemptive_priority();
-    evaluation();
 
     config(rr);
     printf("RR Scheduling\n");
     schedule_rr();
-    evaluation();
-    
-    printf("FCFS Scheduling\n");
+
+    printf("\n");
+    printf("FCFS Scheduling ");
     print_chart(fcfs);
-    printf("SJF Scheduling\n");
+    printf("SJF Scheduling ");
     print_chart(sjf);
-    printf("preemptive SJF Scheduling\n");
+    printf("preemptive SJF Scheduling ");
     print_chart(psjf);
-    printf("priority Scheduling\n");
+    printf("priority Scheduling ");
     print_chart(prior);
-    printf("preemptive priority Scheduling\n");
+    printf("preemptive priority Scheduling ");
     print_chart(pprior);
-    printf("RR Scheduling\n");
+    printf("RR Scheduling ");
     print_chart(rr);
+
+    printf("\n");
+    evaluation();
 }
 
 void create_process(int i){
@@ -123,11 +136,19 @@ void create_process(int i){
     p.arrival_time = rand() % 11; // 0~10
     p.cpu_burst = (rand() % 16) + 5; // 5~20
     p.remain_time = p.cpu_burst; 
-    if (i == 0) {
-        p.io_enable = 1;
-    }
-    else {
-        p.io_enable = (rand() % 2); // 0~1
+
+    p.io_enable = (rand() % 2); // 0~1
+    if (i == MAX_PROCESSES-1) {
+        valid = 0;
+        for (int j = 0; j < MAX_PROCESSES-1; j++) {
+            if (job.p[j].io_enable != 0) {
+                valid = 1;
+                break;
+            }
+        }
+        if (valid == 0) {
+            p.io_enable = 1;
+        }
     }
     if (p.io_enable != 0) {
         p.io_start = (rand() % (p.cpu_burst - 1)) + 1; // 1~(cpuburst-1)
@@ -137,18 +158,23 @@ void create_process(int i){
         p.io_start = 0;
         p.io_burst = 0;
     }
+
     p.priority = rand() % 21; // 0~20
     p.completed = 0;
     p.waiting_time = 0;
     p.turnaround_time = 0;
 
-    printf("process %d\n", i+1);
+    printf("process %d\t", i+1);
     printf("pid : %d\n", p.pid);
-    printf("arrival_time : %d\n", p.arrival_time);
+    printf("arrival_time : %d\t", p.arrival_time);
     printf("cpu_burst : %d\n", p.cpu_burst);
-    printf("io_enable : %d\n", p.io_enable);
-    printf("io_start : %d\n", p.io_start);
-    printf("io_burst : %d\n", p.io_burst);
+    if (p.io_enable != 0){
+        printf("io_enable : enabled\t");
+        printf("io_start : %d\t", p.io_start);
+        printf("io_burst : %d\n", p.io_burst);
+    }else{
+        printf("io_enable : disabled\n");
+    }
     printf("priority : %d\n\n", p.priority);
 
     job.size++;
@@ -182,16 +208,19 @@ void config(Chart c) {
         finished.p[i] = p;
     }
 
-    for (int i = 0; i < MAX_PROCESSES; i++) {
+    c.size = 0;
+    
+    for (int i = 0; i < MAX_TIME; i++) {
         c.pid[i] = 0;
     }
+    
 }
 
 void schedule_fcfs() {
     int time = 0;
     int process_finished = 0;
     Process* p = NULL;
-    int minindex = 0;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         for (int i = 0; i < new.size; i++) {
@@ -250,7 +279,7 @@ void schedule_fcfs() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
 
@@ -265,7 +294,7 @@ void schedule_fcfs() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -278,12 +307,22 @@ void schedule_fcfs() {
 
         time++;
     }
+
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[0].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[0].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[0].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[0].time);
 }
 
 void schedule_sjf() {
     int time = 0;
     int process_finished = 0;
     Process* p = NULL;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         for (int i = 0; i < new.size; i++) {
@@ -342,7 +381,7 @@ void schedule_sjf() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
 
@@ -357,7 +396,7 @@ void schedule_sjf() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -370,6 +409,15 @@ void schedule_sjf() {
 
         time++;
     }
+
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[1].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[1].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[1].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[1].time);
 }
 
 void schedule_preemptive_sjf() {
@@ -377,6 +425,7 @@ void schedule_preemptive_sjf() {
     int process_finished = 0;
     Process* p = NULL;
     int arrived;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         arrived = 0;
@@ -440,7 +489,7 @@ void schedule_preemptive_sjf() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
 
@@ -455,7 +504,7 @@ void schedule_preemptive_sjf() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -468,12 +517,22 @@ void schedule_preemptive_sjf() {
 
         time++;
     }
+
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[2].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[2].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[2].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[2].time);
 }
 
 void schedule_priority() {
     int time = 0;
     int process_finished = 0;
     Process* p = NULL;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         for (int i = 0; i < new.size; i++) {
@@ -532,7 +591,7 @@ void schedule_priority() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
 
@@ -547,7 +606,7 @@ void schedule_priority() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -559,6 +618,15 @@ void schedule_priority() {
         }
         time++;
     }
+    
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[3].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[3].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[3].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[3].time);
 }
 
 void schedule_preemptive_priority() {
@@ -566,6 +634,7 @@ void schedule_preemptive_priority() {
     int process_finished = 0;
     Process* p = NULL;
     int arrived;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         arrived = 0;
@@ -628,7 +697,7 @@ void schedule_preemptive_priority() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
 
@@ -643,7 +712,7 @@ void schedule_preemptive_priority() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -656,6 +725,15 @@ void schedule_preemptive_priority() {
 
         time++;
     }
+    
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[4].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[4].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[4].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[4].time);
 }
 
 void schedule_rr() {
@@ -663,6 +741,7 @@ void schedule_rr() {
     int process_finished = 0;
     Process* p = NULL;
     int quantumtime = 0;
+    double totalWaitingTime = 0, totalTurnaroundTime = 0;
 
     while (process_finished < MAX_PROCESSES) {
         for (int i = 0; i < new.size; i++) {
@@ -722,7 +801,7 @@ void schedule_rr() {
         }
 
         p->remain_time--;
-        if (p->io_enable == 1) {
+        if (p->io_enable != 0) {
             p->io_start--;
         }
         quantumtime++;
@@ -743,7 +822,7 @@ void schedule_rr() {
 
             process_finished++;
         }
-        else if (p->io_enable == 1 && p->io_start == 0) {
+        else if (p->io_enable != 0 && p->io_start == 0) {
             p->arrival_time = time + p->io_burst;
             p->io_enable = 0;
             p = NULL;
@@ -762,42 +841,120 @@ void schedule_rr() {
 
         time++;
     }
+    
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        totalWaitingTime += finished.p[i].waiting_time;
+        totalTurnaroundTime += finished.p[i].turnaround_time;
+    }
+    averageWaitingTime[5].time = totalWaitingTime / MAX_PROCESSES;
+    averageTurnaroundTime[5].time = totalTurnaroundTime / MAX_PROCESSES;
+    printf("Average Waiting Time: %.2f\n", averageWaitingTime[5].time);
+    printf("Average Turnaround Time: %.2f\n\n", averageTurnaroundTime[5].time);
 }
 
 int compare_arrival(const void* a, const void* b) {
     Process* p1 = (Process*)a;
     Process* p2 = (Process*)b;
-    return p1->arrival_time - p2->arrival_time;
+    if (p1->arrival_time < p2->arrival_time) return -1;
+    if (p1->arrival_time > p2->arrival_time) return 1;
+    return 0;
 }
 
 int compare_burst(const void* a, const void* b) {
     Process* p1 = (Process*)a;
     Process* p2 = (Process*)b;
-    return p1->remain_time - p2->remain_time;
+    if (p1->remain_time < p2->remain_time) return -1;
+    if (p1->remain_time > p2->remain_time) return 1;
+    return 0;
 }
 
 int compare_priority(const void* a, const void* b) {
     Process* p1 = (Process*)a;
     Process* p2 = (Process*)b;
-    return p1->priority - p2->priority;
+    if (p1->priority < p2->priority) return -1;
+    if (p1->priority > p2->priority) return 1;
+    return 0;
+}
+
+int compare_time(const void* a, const void* b) {
+    Eval* p1 = (Eval*)a;
+    Eval* p2 = (Eval*)b;
+    if (p1->time < p2->time) return -1;
+    if (p1->time > p2->time) return 1;
+    return 0;
 }
 
 void evaluation() {
-    double totalWaitingTime = 0, totalTurnaroundTime = 0;
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        totalWaitingTime += finished.p[i].waiting_time;
-        totalTurnaroundTime += finished.p[i].turnaround_time;
+    printf("Evaluation\n\n");
+
+    qsort(averageWaitingTime, 6, sizeof(Eval), compare_time);
+
+    printf("averageWaitingTime\n");
+    for (int i = 0; i < 6; i++) {
+        printf("%d : ", i+1);
+        switch (averageWaitingTime[i].index) {
+            case 0:
+                printf("FCFS = ");
+                break;
+            case 1:
+                printf("SJF = ");
+                break;
+            case 2:
+                printf("preemptive SJF = ");
+                break;
+            case 3:
+                printf("priority = ");
+                break;
+            case 4:
+                printf("preemptive priority = ");
+                break;
+            case 5:
+                printf("RR = ");
+                break;
+        }
+        printf("%.2f\n", averageWaitingTime[i].time);
     }
-    printf("Average Waiting Time: %.2f\n", totalWaitingTime / MAX_PROCESSES);
-    printf("Average Turnaround Time: %.2f\n\n", totalTurnaroundTime / MAX_PROCESSES);
+    printf("\n");
+    
+    qsort(averageTurnaroundTime, 6, sizeof(Eval), compare_time);
+
+    printf("averageTurnaroundTime\n");
+    for (int i = 0; i < 6; i++) {
+        printf("%d : ", i+1);
+        switch (averageTurnaroundTime[i].index) {
+            case 0:
+                printf("FCFS = ");
+                break;
+            case 1:
+                printf("SJF = ");
+                break;
+            case 2:
+                printf("preemptive SJF = ");
+                break;
+            case 3:
+                printf("priority = ");
+                break;
+            case 4:
+                printf("preemptive priority = ");
+                break;
+            case 5:
+                printf("RR = ");
+                break;
+        }
+        printf("%.2f\n", averageTurnaroundTime[i].time);
+    }
+    printf("\n");
 }
 
 void print_chart(Chart c) {
-    printf("Gantt Chart:\n");
+    printf("Gantt Chart:");
     for (int i = 0; i < MAX_TIME; i++) {
         if (c.pid[i] == 0) {
             printf("\n\n");
             break;
+        }
+        if (i % 10 == 0) {
+            printf("\n");
         }
         else if (c.pid[i] == -1) {
             printf("IDLE");
@@ -806,8 +963,5 @@ void print_chart(Chart c) {
             printf("%04d", c.pid[i]);
         }
         printf("|");
-        if (i % 10 == 9) {
-            printf("\n");
-        }
     }
 }
